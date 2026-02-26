@@ -1,10 +1,21 @@
-const { WebpayPlus } = require('transbank-sdk'); // Importamos la librería de Transbank
+const { WebpayPlus } = require('transbank-sdk');
 const { createClient } = require('@supabase/supabase-js');
 
-// Conectamos con tu base de datos
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export default async function handler(req, res) {
+  // --- AGREGAR ESTO PARA EVITAR EL ERROR DE CONEXIÓN ---
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Permite peticiones desde cualquier lugar
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  // ----------------------------------------------------
+
   if (req.method !== 'POST') return res.status(405).send('Metodo no permitido');
 
   // 1. Recibimos los datos que vienen de la card de Readdy.ai
