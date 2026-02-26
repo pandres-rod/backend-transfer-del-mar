@@ -3,38 +3,36 @@ const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-export default async function handler(req, res) {
-  // --- AGREGAR ESTO PARA EVITAR EL ERROR DE CONEXIÓN ---
+module.exports = async (req, res) => {
+  // Configuración de CORS para que tu sitio Readdy pueda hablar con Vercel
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*'); // Permite peticiones desde cualquier lugar
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
-  // ----------------------------------------------------
 
-  if (req.method !== 'POST') return res.status(405).send('Metodo no permitido');
-
-  // 1. Recibimos los datos que vienen de la card de Readdy.ai
-  const { tour_name, customer_email, amount } = req.body;
-  const buyOrder = "O-" + Math.floor(Math.random() * 10000); // Generamos un ID de orden al azar
-  const sessionId = "S-" + Math.floor(Math.random() * 10000);
-  const returnUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/confirmacion`;
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Solo se permite POST' });
+  }
 
   try {
-    // 2. Le pedimos a Transbank que inicie la transacción
-    const createResponse = await (new WebpayPlus.Transaction()).create(
-      buyOrder, 
-      sessionId, 
-      amount, 
-      returnUrl
-    );
+    const { tour_name, amount, customer_email } = req.body;
+    
+    // Datos de la orden
+    const buyOrder = "O-" + Math.floor(Math.random() * 100000);
+    const sessionId = "S-" + Math.floor(Math.random() * 100000);
+    // IMPORTANTE: Cambia esto por la URL real de tu página de confirmación más adelante
+    const returnUrl = `https://transferdelmar.cl/confirmacion`; 
 
-    // 3. Guardamos la intención de compra en Supabase
-    await supabase.from('orders').insert([{
+    // 1. Crear transacción en Transbank
+    const tx = new WebpayPlus.Transaction();
+    const createResponse = await tx.create(buyOrder, sessionId, amount, returnUrl);
+
+    // 2. Guardar en Supabase
+    const { error } = await supabase.from('orders').insert([{
       order_id: buyOrder,
       tour_name: tour_name,
       amount: amount,
@@ -43,13 +41,16 @@ export default async function handler(req, res) {
       status: 'PENDING'
     }]);
 
-    // 4. Respondemos a Readdy.ai con la URL donde debe enviar al usuario
-    res.status(200).json({
+    if (error) throw error;
+
+    // 3. Responder con la info para ir a Webpay
+    return res.status(200).json({
       url: createResponse.url,
       token: createResponse.token
     });
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Error en el proceso:", error);
+    return res.status(500).json({ error: error.message });
   }
-}
+};
