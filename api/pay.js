@@ -37,23 +37,30 @@ module.exports = async (req, res) => {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 60000);
 
-    const { error } = await supabase.from('orders').insert([{
-      order_id: buyOrder,
-      tour_name: tour_name,
-      amount: amount,
-      currency: 'CLP',
-      customer_email: customer_email,
-      customer_name: customer_name,
-      customer_phone: customer_phone,
-      token: createResponse.token,
-      status: 'PENDING',
-      expires_at: expiresAt.toISOString()
-    }]);
+    // Intentamos guardar en Supabase, pero no bloqueamos el pago si falla
+    try {
+      const { error: supabaseError } = await supabase.from('orders').insert([{
+        order_id: buyOrder,
+        tour_name: tour_name,
+        amount: amount,
+        currency: 'CLP',
+        customer_email: customer_email,
+        customer_name: customer_name,
+        customer_phone: customer_phone,
+        token: createResponse.token,
+        status: 'PENDING',
+        expires_at: expiresAt.toISOString()
+      }]);
 
-    if (error) {
-      console.error("Supabase Error:", error);
-      throw new Error("No se pudo registrar la orden en la base de datos");
+      if (supabaseError) {
+        console.error("Error de inserción en Supabase:", supabaseError);
+      } else {
+        console.log("Orden registrada exitosamente en Supabase");
+      }
+    } catch (err) {
+      console.error("Error crítico de conexión con Supabase:", err);
     }
+    // El código seguirá aquí abajo y ejecutará el return res.status(200)...
 
     // 4. Retorno exacto al front: URL (redirect_url) y Token
     return res.status(200).json({
