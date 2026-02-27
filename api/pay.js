@@ -4,7 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 module.exports = async (req, res) => {
-  // Configuración de CORS
+  // 1. Configuración de CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
@@ -16,25 +16,32 @@ module.exports = async (req, res) => {
   try {
     const { tour_name, amount, customer_email, customer_name, customer_phone } = req.body;
     
-    // 1. Validar que las variables existan
-    if (!process.env.TBE_COMMERCE_CODE || !process.env.TBE_API_KEY) {
-        throw new Error("Faltan variables de entorno de Transbank en Vercel.");
+    // 2. Limpieza y Normalización de Credenciales (Evita el error 401)
+    const commerceCode = String(process.env.TBE_COMMERCE_CODE || '').trim();
+    const apiKey = String(process.env.TBE_API_KEY || '').trim();
+    
+    // Verificación de Ambiente
+    const isProduction = process.env.TBE_ENVIRONMENT === 'PRODUCTION';
+    const envConfig = isProduction ? Environment.Production : Environment.Integration;
+
+    // Log de diagnóstico en Vercel
+    console.log(`Conectando a Webpay - Comercio: ${commerceCode} - Modo: ${isProduction ? 'PROD' : 'INT'}`);
+
+    if (!commerceCode || !apiKey) {
+        throw new Error("Credenciales incompletas en variables de entorno.");
     }
 
     const buyOrder = "TDM-" + Math.floor(Math.random() * 100000);
     const sessionId = "SES-" + Math.floor(Math.random() * 100000);
     const returnUrl = `https://transferdelmar.cl/confirmacion`; 
 
-    // 2. Iniciar Webpay con manejo manual de opciones
-    const tx = new WebpayPlus.Transaction(new Options(
-      process.env.TBE_COMMERCE_CODE, 
-      process.env.TBE_API_KEY, 
-      process.env.TBE_ENVIRONMENT === 'PRODUCTION' ? Environment.Production : Environment.Integration
-    ));
+    // 3. Inicialización Explícita
+    const tx = new WebpayPlus.Transaction(new Options(commerceCode, apiKey, envConfig));
 
+    // Aquí es donde ocurre el 401 si las credenciales no coinciden con el ambiente
     const createResponse = await tx.create(buyOrder, sessionId, amount, returnUrl);
 
-    // 3. Intento de guardado en Supabase (No bloqueante)
+    // 4. Guardado en Supabase (Try-catch para no bloquear el pago)
     try {
       await supabase.from('orders').insert([{
         order_id: buyOrder,
@@ -48,18 +55,21 @@ module.exports = async (req, res) => {
         expires_at: new Date(Date.now() + 30 * 60000).toISOString()
       }]);
     } catch (dbErr) {
-      console.error("Fallo Supabase:", dbErr.message);
+      console.error("Error (No crítico) en Supabase:", dbErr.message);
     }
 
-    // 4. Respuesta al Front
+    // 5. Respuesta al Frontend
     return res.status(200).json({
       url: createResponse.url,
       token: createResponse.token
     });
 
   } catch (error) {
-    // ESTO ES LO QUE VEREMOS EN LOS LOGS DE VERCEL
     console.error("ERROR DETECTADO:", error.message);
-    return res.status(500).json({ error: "Error interno del servidor", details: error.message });
+    // Enviamos el detalle al front para saber exactamente qué falló
+    return res.status(500).json({ 
+      error: "Error de autorización con Transbank", 
+      details: error.message 
+    });
   }
 };
