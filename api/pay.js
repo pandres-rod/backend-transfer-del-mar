@@ -47,6 +47,7 @@ module.exports = async (req, res) => {
         order_id: buyOrder,
         tour_name: tour_name,
         amount: amount,
+        currency: 'CLP',
         customer_email: customer_email,
         customer_name: customer_name,
         customer_phone: customer_phone,
